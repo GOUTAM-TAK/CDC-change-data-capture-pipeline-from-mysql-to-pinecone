@@ -6,31 +6,6 @@ import decimal
 import pandas as pd
 from datetime import datetime,date
 from utils.util import get_primary_key_column
-"""def fetch_all_tables_data(connection):
-    try:
-        #connection = connect_to_mysql()
-        cursor = connection.cursor()
-        cursor.execute("SHOW TABLES")
-        tables = cursor.fetchall()
-
-        all_data = [] 
-
-        for table in tables:
-            table_name=table[0]
-            query=f"SELECT * FROM {table_name}"
-            df = pd.read_sql(query, connection)
-          
-            for index, row in df.iterrows():
-                row_data = row.to_dict()
-                all_data.append({"data": row_data, "source":f"MySQL table : {table_name}"})
-
-        cursor.close
-        print("successfully fetch data from mysql database")
-        connection.close()
-        return all_data
-    except Exception as e:
-        logger.error(f"Error fetching data from MySQL: {e}")
-        return jsonify({"detail":"Error fetching data from database"}),500"""
      
 def get_all_tables(connection):
     try:
@@ -133,7 +108,7 @@ def process_and_index_data(data, primary_column,table_name, delete_old=False):
         chunk_size = 1000  # Define your chunk size
         documents = []
         metadata_list = []
-        ids_to_delete = []
+        #ids_to_delete = []
 
         # Prepare documents and metadata
         for d in data:
@@ -150,17 +125,17 @@ def process_and_index_data(data, primary_column,table_name, delete_old=False):
                 id_value = d["data"].get(pk_col)
                 unique_id = f"{table_name}_{id_value}"  # Generate unique ID
 
-                if delete_old:
-                    ids_to_delete.append(unique_id)
+                #if delete_old:
+                    #ids_to_delete.append(unique_id)
 
                 documents.append(data_string)
                 metadata_list.append({"source": source, "id": unique_id, "text":data_string})
 
         # Deleting old records if needed
-        if delete_old and ids_to_delete:
+        """if delete_old and ids_to_delete:
             namespace = 'task1'  # Use default namespace
             pinecone_index.delete(ids=ids_to_delete, namespace=namespace)
-            print(f"Deleted old records from Pinecone: {ids_to_delete}")
+            print(f"Deleted old records from Pinecone: {ids_to_delete}")"""
 
         # Creating or updating the vector store
         embedding = SentenceTransformerEmbedding(model)
@@ -182,45 +157,6 @@ def process_and_index_data(data, primary_column,table_name, delete_old=False):
     except Exception as e:
         logger.error(f"Error processing and indexing data: {e}")
         raise
-
-"""def process_and_index_data(data):
-    try:
-        if not data:
-            logger.warning("No data to index.")
-            return
-        
-        chunk_size = 1000  # Define your chunk size
-        documents = []
-        metadata_list = []
-
-        for d in data:
-            if isinstance(d, dict) and "data" in d:
-                data_string = json.dumps(d["data"], default=json_serialize)
-                source = d.get("source", "unknown")
-            else:
-                data_string = str(d)  # Handle cases where d might be a string directly
-                source = "unknown"  # Default source for string data
-
-            chunks = [data_string[i:i+chunk_size] for i in range(0, len(data_string), chunk_size)]
-            for chunk in chunks:
-                documents.append(chunk)
-                metadata_list.append({"source": source})
-
-        # Create a custom embedding object
-        embedding = SentenceTransformerEmbedding(model)
-
-        # Create or update the vector store
-        docsearch = PineconeVectorStore.from_texts(
-            texts=documents,
-            embedding=embedding,  # Pass the embedding object
-            metadatas=metadata_list,
-            index_name=index_name
-        )
-        print("Data indexed successfully in Pinecone.")
-
-    except Exception as e:
-        logger.error(f"Error processing and indexing data: {e}")
-        raise"""
 
 # Define custom JSON serializer for objects not serializable by default JSON encoder
 def json_serialize(obj):
