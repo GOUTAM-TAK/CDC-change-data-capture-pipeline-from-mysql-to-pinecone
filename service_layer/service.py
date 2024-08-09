@@ -68,7 +68,7 @@ def fetch_and_index_data(connection, table_name, last_updated):
             row_data = row.to_dict()
             all_data.append({"data": row_data, "source": table_name})
         
-        process_and_index_data(all_data, primary_column, table_name, delete_old=True)
+        process_and_index_data(all_data, primary_column, table_name)
         new_last_updated = max(record['change_datetime'] for record in records)
         update_watermark(connection, table_name, new_last_updated)
         print(f"successfully updated watermark table with table name : {table_name} new last update : {new_last_updated}")
@@ -99,23 +99,20 @@ def index_initialize():
        raise
 
 #process data and store into vector database
-def process_and_index_data(data, primary_column,table_name, delete_old=False):
+def process_and_index_data(data, primary_column, table_name):
     try:
         if not data:
             logger.warning("No data to index.")
             return
-        
-        chunk_size = 1000  # Define your chunk size
+        batch_size=100
         documents = []
         metadata_list = []
-        #ids_to_delete = []
 
         # Prepare documents and metadata
         for d in data:
             if isinstance(d, dict) and "data" in d:
                 data_string = json.dumps(d["data"], default=json_serialize)
                 source = d.get("source", "unknown")
-                #table_name = source.split(":")[1].strip()  # Extract table_name from source
 
                 pk_col = primary_column
                 if not pk_col:
@@ -123,40 +120,37 @@ def process_and_index_data(data, primary_column,table_name, delete_old=False):
                     continue
 
                 id_value = d["data"].get(pk_col)
-                unique_id = f"{table_name}_{id_value}"  # Generate unique ID
-
-                #if delete_old:
-                    #ids_to_delete.append(unique_id)
+                unique_id = f"{table_name}#{id_value}"  # Generate unique ID
 
                 documents.append(data_string)
-                metadata_list.append({"source": source, "id": unique_id, "text":data_string})
-
-        # Deleting old records if needed
-        """if delete_old and ids_to_delete:
-            namespace = 'task1'  # Use default namespace
-            pinecone_index.delete(ids=ids_to_delete, namespace=namespace)
-            print(f"Deleted old records from Pinecone: {ids_to_delete}")"""
+                metadata_list.append({"source": source, "id": unique_id, "text": data_string})
 
         # Creating or updating the vector store
         embedding = SentenceTransformerEmbedding(model)
 
-        #docsearch = PineconeVectorStore(index_name=index_name,embedding=embedding)
-         # Create embeddings for documents
-        embeddings = [embedding.embed_documents(document) for document in documents]
+        # Process in batches
+        for i in range(0, len(documents), batch_size):
+            batch_documents = documents[i:i + batch_size]
+            batch_metadata = metadata_list[i:i + batch_size]
 
-        # Prepare data for upsert
-        upsert_data = [
-            {"id": meta["id"], "values": emb, "metadata": meta}
-            for emb, meta in zip(embeddings, metadata_list)
-        ]
-        # Insert or update records
-        pinecone_index.upsert(vectors=upsert_data,namespace='task1')
+            # Create embeddings for the batch
+            embeddings = [embedding.embed_documents(document) for document in batch_documents]
 
-        print("Data indexed successfully in Pinecone.")
+            # Prepare data for upsert
+            upsert_data = [
+                {"id": meta["id"], "values": emb, "metadata": meta}
+                for emb, meta in zip(embeddings, batch_metadata)
+            ]
+
+            # Insert or update records in Pinecone
+            pinecone_index.upsert(vectors=upsert_data, namespace='task1')
+
+            print(f"Batch {i // batch_size + 1} indexed successfully in Pinecone.")
 
     except Exception as e:
         logger.error(f"Error processing and indexing data: {e}")
         raise
+
 
 # Define custom JSON serializer for objects not serializable by default JSON encoder
 def json_serialize(obj):
